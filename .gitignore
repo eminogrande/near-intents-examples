@@ -1,2 +1,6 @@
 node_modules
 .env
+
+# Solver and helper env files (keep secrets out of git)
+near-intents-amm-solver/env/.env*
+solver-setup/.env*

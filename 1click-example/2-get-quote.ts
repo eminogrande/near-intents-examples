@@ -12,12 +12,15 @@ import "dotenv/config";
  */
 
 // Example Swap Configuration
+// For this run we want EXACT_INPUT: 9 EURe (on Gnosis) -> BTC, DRY MODE (no deposit address)
 const isTest = true;  // set to true for quote estimation / testing, false for actual execution
-const senderAddress = process.env.SENDER_NEAR_ACCOUNT as string;  // Configure in .env
-const recipientAddress = '0x553e771500f2d7529079918F93d86C0a845B540b';  // Token swap recipient address on Arbitrum
-const originAsset = "nep141:wrap.near";  // Native $NEAR
-const destinationAsset = "nep141:arb-0x912ce59144191c1204e64559fe8253a0e49e6548.omft.near";  // Native $ARB
-const amount = NEAR.toUnits("0.5").toString();
+// NOTE: For EURe origin with ORIGIN_CHAIN refund, refundTo must be a valid EVM address on Gnosis.
+const senderAddress = '0x553e771500f2d7529079918F93d86C0a845B540b';
+const recipientAddress = 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh';  // BTC recipient
+const originAsset = "nep141:gnosis-0x420ca0f9b9b604ce0fd9c18ef134c705e5fa3430.omft.near";  // EURe on Gnosis
+const destinationAsset = "nep141:btc.omft.near";  // Native BTC
+// 9 EURe with 18 decimals
+const amount = "9000000000000000000";
 
 // Initialize the API client
 OpenAPI.BASE = 'https://1click.chaindefuser.com';
@@ -104,6 +107,18 @@ try {
 // Only run if this file is executed directly
 if (require.main === module) {
   getQuote(isTest, senderAddress, recipientAddress, originAsset, destinationAsset, amount)
-    .then(result => console.log("\n\nAuthenticated getQuote RESPONSE:", result))
+    .then(result => {
+      const q = (result as any).quote || {};
+      console.log("\n=== Quote Summary ===");
+      console.log({
+        swapType: q.swapType,
+        originSymbol: q.originSymbol,
+        destinationSymbol: q.destinationSymbol,
+        amountOutFormatted: q.amountOutFormatted,
+        amountInFormatted: q.amountInFormatted,
+        amountIn: q.amountIn,
+        depositAddress: q.depositAddress,
+      });
+    })
     .catch(console.error);
 }

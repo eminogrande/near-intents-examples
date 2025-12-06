@@ -158,3 +158,29 @@ Contributions are welcome! Please feel free to submit issues and enhancement req
 ## 📄 License
 
 This project is provided as educational examples for the 1-Click SDK and NEAR Intents ecosystem.
+
+## Mini BTC ↔ EURe App (Mobile)
+
+This repo now includes a tiny, mobile-optimized app and API proxy to fetch quotes and show deposit addresses for BTC ↔ EURe swaps.
+
+- `public/index.html` – single-page UI (big fonts, B/W)
+- `server/index.ts` – Express API proxy using 1‑Click SDK
+- `cli/swap.ts` – CLI to fetch a quote from the terminal
+- `Dockerfile` – containerize the server and static UI
+
+Run locally (Node 18+ recommended):
+- `npm i` (or `pnpm i`)
+- Optional env: `ONE_CLICK_JWT` for lowest fees
+- `npm run dev` and open http://localhost:3000
+
+CLI examples:
+- `ONE_CLICK_JWT=... ts-node cli/swap.ts --dir btc-to-eure --out 21 --recv 0xYourEvmOnGnosis --refund bc1YourRefund`
+- `ONE_CLICK_JWT=... ts-node cli/swap.ts --dir eure-to-btc --out 0.001 --recv bc1YourBtc --refund 0xYourGnosisRefund`
+
+Docker:
+- `docker build -t near-intents-mini .`
+- `docker run -p 3000:3000 --env ONE_CLICK_JWT=... near-intents-mini`
+
+Notes:
+- The app calls the 1‑Click API and returns a deposit address you must pay exactly before the deadline.
+- If EURe is unavailable via the API, you will see an error; try again later or use a supported asset.

@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Intend: EURe ↔ BTC</title>
+  <style>
+    :root { color-scheme: light; }
+    html, body { margin: 0; padding: 0; font-family: -apple-system, system-ui, Segoe UI, Roboto, sans-serif; background: #fff; color: #000; }
+    .wrap { max-width: 640px; margin: 0 auto; padding: 16px; }
+    h1 { font-size: 26px; font-weight: 700; margin: 8px 0 8px; }
+    h2 { font-size: 20px; margin: 16px 0 8px; }
+    .seg { display: flex; gap: 8px; margin-bottom: 12px; }
+    .seg button { flex: 1; font-size: 16px; padding: 10px; background:#000; color:#fff; border: none; border-radius: 8px; }
+    .seg button[aria-pressed="false"] { background:#eee; color:#000; }
+    label { display:block; font-size: 15px; margin: 10px 0 4px; }
+    input { width: 100%; font-size: 18px; padding: 12px; border:1px solid #000; border-radius: 8px; }
+    .row { display:flex; gap:10px; }
+    .row > div { flex:1; }
+    .btn { width: 100%; font-size: 18px; padding: 14px; margin-top: 14px; background:#000; color:#fff; border: none; border-radius: 10px; }
+    .btn-secondary { width: 100%; font-size: 16px; padding: 10px; margin-top: 8px; background:#eee; color:#000; border:1px solid #000; border-radius: 8px; }
+    .out { margin-top: 18px; border-top:2px solid #000; padding-top: 10px; font-size: 16px; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; word-break: break-all; }
+    .note { font-size: 13px; color:#333; margin-top:6px; }
+    .section { margin-top: 16px; padding-top: 10px; border-top:1px solid #000; }
+    .qr { margin-top: 10px; text-align: center; }
+    .qr img { border:1px solid #000; border-radius: 6px; }
+    .status { margin-top: 12px; font-size: 14px; }
+    pre { font-size: 12px; background:#f7f7f7; padding:8px; border-radius:6px; overflow-x:auto; }
+    .history-list { font-size: 13px; margin-top: 8px; }
+    .history-item { padding: 6px 0; border-bottom: 1px solid #eee; }
+    .history-pill { display:inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; margin-right:6px; }
+    .history-test { background:#f0f0f0; }
+    a { color: #000; }
+  </style>
+  <script>
+    let currentDir = 'btc-to-eure';
+    let statusTimer = null;
+    let lastDepositAddress = '';
+
+    function setDir(val) {
+      currentDir = val;
+      document.getElementById('dir-b2e').setAttribute('aria-pressed', val==='btc-to-eure');
+      document.getElementById('dir-e2b').setAttribute('aria-pressed', val==='eure-to-btc');
+      document.getElementById('amountLabel').textContent =
+        val==='btc-to-eure' ? 'Amount to send (satoshis)' : 'Amount to send (EURe)';
+      document.getElementById('recipientLabel').textContent =
+        val==='btc-to-eure' ? 'EURe Receiver (Gnosis EVM)' : 'BTC Receiver address';
+      document.getElementById('refundLabel').textContent =
+        val==='btc-to-eure' ? 'BTC Refund address' : 'EURe Refund (Gnosis EVM)';
+      document.getElementById('amount').value = '';
+    }
+
+    function clearStatus() {
+      const statusEl = document.getElementById('status');
+      statusEl.innerHTML = '';
+      if (statusTimer) {
+        clearInterval(statusTimer);
+        statusTimer = null;
+      }
+      lastDepositAddress = '';
+    }
+
+    function renderQuote(direction, q) {
+      const out = document.getElementById('quote');
+      const dir = direction || currentDir;
+      if (!q || !q.depositAddress) {
+        out.textContent = 'Quote returned without a deposit address.';
+        return;
+      }
+      let html = '';
+      if (dir === 'btc-to-eure') {
+        html += `<div><strong>Send BTC</strong>: <span class="mono">${q.amountInFormatted || ''} BTC</span>`;
+        if (q.amountIn) html += ` (<span class="mono">${q.amountIn} sats</span>)`;
+        html += `</div>`;
+        html += `<div><strong>Receive approx EURe</strong>: <span class="mono">${q.amountOutFormatted || ''} EURe</span>`;
+        if (q.amountOut) html += ` (<span class="mono">${q.amountOut} units</span>)`;
+        html += `</div>`;
+      } else {
+        html += `<div><strong>Send EURe</strong>: <span class="mono">${q.amountInFormatted || ''} EURe</span>`;
+        if (q.amountIn) html += ` (<span class="mono">${q.amountIn} units</span>)`;
+        html += `</div>`;
+        html += `<div><strong>Receive approx BTC</strong>: <span class="mono">${q.amountOutFormatted || ''} BTC</span>`;
+        if (q.amountOut) html += ` (<span class="mono">${q.amountOut} sats</span>)`;
+        html += `</div>`;
+      }
+      html += `<div style="margin-top:8px;"><strong>Deposit to</strong>:<div class="mono">${q.depositAddress}</div></div>`;
+
+      const qrData = dir === 'btc-to-eure'
+        ? `bitcoin:${q.depositAddress}?amount=${encodeURIComponent(q.amountInFormatted || '')}`
+        : `ethereum:${q.depositAddress}`;
+      html += `<div class="qr"><img alt="Deposit QR" src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(qrData)}" /></div>`;
+
+      if (q.deadline) {
+        html += `<div class="note">Deadline: <span class="mono">${q.deadline}</span></div>`;
+      }
+      html += `<div class="note">Pay exactly and before deadline, then keep this page open to watch status.</div>`;
+
+      out.innerHTML = html;
+    }
+
+    function startStatusPolling(depositAddress) {
+      const statusEl = document.getElementById('status');
+      lastDepositAddress = depositAddress;
+      if (statusTimer) {
+        clearInterval(statusTimer);
+        statusTimer = null;
+      }
+      statusEl.innerHTML = `<div>Waiting for deposit/status for <span class="mono">${depositAddress}</span> ...</div>`;
+
+      async function tick() {
+        try {
+          const r = await fetch('/api/intend/status/' + encodeURIComponent(depositAddress));
+          const j = await r.json();
+          if (!r.ok) throw new Error(j.error || 'Status failed');
+          const status = j.status || j.state || 'UNKNOWN';
+          let html = `<div>Status: <span class="mono">${status}</span></div>`;
+          html += `<pre class="mono">${JSON.stringify(j, null, 2)}</pre>`;
+          statusEl.innerHTML = html;
+          if (status === 'SUCCESS' || status === 'REFUNDED') {
+            clearInterval(statusTimer);
+            statusTimer = null;
+          }
+        } catch (e) {
+          statusEl.textContent = 'Status error: ' + (e && e.message ? e.message : e);
+        }
+      }
+
+      tick();
+      statusTimer = setInterval(tick, 5000);
+    }
+
+    async function runTest(dir) {
+      const out = document.getElementById('quote');
+      clearStatus();
+      out.textContent = 'Requesting test quote...';
+      try {
+        const endpoint = dir === 'btc-to-eure' ? '/api/intend/test/btc-to-eure' : '/api/intend/test/eure-to-btc';
+        const r = await fetch(endpoint, { method: 'POST' });
+        const j = await r.json();
+        if (!r.ok) {
+          out.innerHTML = '';
+          out.innerHTML += 'Test quote failed: ' + (j.error || 'Unknown error');
+          if (j.details) {
+            out.innerHTML += `<pre class="mono">${JSON.stringify(j.details, null, 2)}</pre>`;
+          }
+          return;
+        }
+        renderQuote(j.direction || dir, j);
+        if (j.depositAddress) {
+          startStatusPolling(j.depositAddress);
+        }
+      } catch (e) {
+        out.textContent = 'Test quote failed: ' + (e && e.message ? e.message : e);
+      }
+    }
+
+    async function getCustomQuote() {
+      const amount = document.getElementById('amount').value.trim();
+      const recipient = document.getElementById('recipient').value.trim();
+      const refund = document.getElementById('refund').value.trim();
+      const out = document.getElementById('quote');
+      if (!amount || !recipient || !refund) {
+        alert('Enter amount, recipient, and refund address');
+        return;
+      }
+      clearStatus();
+      out.textContent = 'Fetching quote...';
+      try {
+        const dir = currentDir;
+        const endpoint = dir === 'btc-to-eure' ? '/api/intend/btc-to-eure' : '/api/intend/eure-to-btc';
+        const body = dir === 'btc-to-eure'
+          ? { amountInSats: amount, recipientEvm: recipient, refundBtc: refund }
+          : { amountInEure: amount, recipientBtc: recipient, refundEvm: refund };
+        const r = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const j = await r.json();
+        if (!r.ok) {
+          out.innerHTML = '';
+          out.innerHTML += 'Quote failed: ' + (j.error || 'Unknown error');
+          if (j.details) {
+            out.innerHTML += `<pre class="mono">${JSON.stringify(j.details, null, 2)}</pre>`;
+          }
+          return;
+        }
+        renderQuote(j.direction || dir, j);
+        if (j.depositAddress) {
+          startStatusPolling(j.depositAddress);
+        }
+      } catch (e) {
+        out.textContent = 'Quote failed: ' + (e && e.message ? e.message : e);
+      }
+    }
+
+    async function loadHistory() {
+      const box = document.getElementById('history');
+      try {
+        const r = await fetch('/api/intend/history');
+        const items = await r.json();
+        if (!Array.isArray(items) || !items.length) {
+          box.innerHTML = '<div class="note">No swaps from this server in memory yet.</div>';
+          return;
+        }
+        let html = '';
+        items.forEach((it) => {
+          html += '<div class="history-item">';
+          html += `<div><span class="history-pill">${it.direction}</span>`;
+          if (it.test) html += `<span class="history-pill history-test">test</span>`;
+          html += `<span class="mono">${it.createdAt}</span></div>`;
+          html += `<div class="note">in: ${it.amountInFormatted} → out: ${it.amountOutFormatted}</div>`;
+          html += `<div class="mono" style="font-size:11px;">${it.depositAddress}</div>`;
+          html += '</div>';
+        });
+        box.innerHTML = html;
+      } catch (e) {
+        box.innerHTML = '<div class="note">Failed to load history: ' + (e && e.message ? e.message : e) + '</div>';
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      setDir('btc-to-eure');
+      // Prefill default BTC→EURe custom swap values
+      const amountEl = document.getElementById('amount');
+      const recipientEl = document.getElementById('recipient');
+      const refundEl = document.getElementById('refund');
+      if (amountEl) amountEl.value = '10000';
+      if (recipientEl) recipientEl.value = '0x8a6652F330B79c3a31621114486E57AB3f41B410';
+      if (refundEl) refundEl.value = 'bc1p4r0plqeu27qjcuhexwhfduh2faju9tqn0rj28fdwyrv4quk08dfqgt0dcg';
+      loadHistory();
+    });
+  </script>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Intend: EURe ↔ BTC</h1>
+    <div class="note">
+      Quick sanity tool: run one of the preset tests below or enter a custom swap. Uses 1‑Click quotes and polls intent
+      execution status by deposit address.
+    </div>
+
+    <div class="section">
+      <h2>Quick tests</h2>
+      <button class="btn-secondary" onclick="runTest('btc-to-eure')">Test: 10,000 sats → EURe</button>
+      <button class="btn-secondary" onclick="runTest('eure-to-btc')">Test: 10 EURe → BTC</button>
+      <div class="note">
+        Test buttons use environment-configured receiver and refund addresses
+        (<span class="mono">INTEND_TEST_*</span> vars) so you can route swaps to your own wallets.
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Custom swap</h2>
+      <div class="seg">
+        <button id="dir-b2e" aria-pressed="true" onclick="setDir('btc-to-eure')">BTC → EURe</button>
+        <button id="dir-e2b" aria-pressed="false" onclick="setDir('eure-to-btc')">EURe → BTC</button>
+      </div>
+
+      <label id="amountLabel" for="amount">Amount to send (satoshis)</label>
+      <input id="amount" placeholder="e.g. 10000 or 10" inputmode="decimal" autocomplete="off" />
+
+      <label id="recipientLabel" for="recipient">EURe Receiver (Gnosis EVM)</label>
+      <input id="recipient" placeholder="0x..." autocomplete="off" />
+
+      <label id="refundLabel" for="refund">BTC Refund address</label>
+      <input id="refund" placeholder="bc1..." autocomplete="off" />
+
+      <button class="btn" onclick="getCustomQuote()">Get Quote + Start Status</button>
+      <div class="note">
+        For BTC → EURe: amount is in satoshis, refund is BTC, receiver is Gnosis EVM.<br />
+        For EURe → BTC: amount is in EURe (decimal), refund is Gnosis EVM, receiver is BTC.
+      </div>
+    </div>
+
+    <div id="quote" class="out"></div>
+    <div id="status" class="out status"></div>
+
+    <div class="section">
+      <h2>Recent swaps (this server)</h2>
+      <div id="history" class="history-list"></div>
+    </div>
+
+    <div class="note" style="margin-top:16px;">
+      Back to mini app: <a href="/">BTC ↔ EURe landing</a>
+    </div>
+  </div>
+</body>
+</html>

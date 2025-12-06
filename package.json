@@ -8,7 +8,13 @@
     "sendDeposit": "ts-node 1click-example/3-send-deposit.ts",
     "submitTxHash": "ts-node 1click-example/4-submit-tx-hash.ts",
     "checkStatus": "ts-node 1click-example/5-check-status.ts",
-    "fullSwap": "ts-node 1click-example/6-full-swap.ts"
+    "fullSwap": "ts-node 1click-example/6-full-swap.ts",
+    "quoteEureToBtc9": "ts-node 1click-example/quote-eure-to-btc.ts",
+    "dev": "ts-node server/index.ts",
+    "build": "tsc",
+    "start": "node dist/server/index.js",
+    "cli": "ts-node cli/swap.ts",
+    "probe-min": "ts-node cli/probe-min.ts"
   },
   "dependencies": {
     "@defuse-protocol/one-click-sdk-typescript": "0.1.1",
@@ -17,10 +23,16 @@
     "@near-js/providers": "^2.2.4",
     "@near-js/signers": "^2.2.4",
     "@near-js/tokens": "^2.2.4",
-    "dotenv": "^17.2.1"
+    "dotenv": "^17.2.1",
+    "cors": "^2.8.5",
+    "express": "^4.18.3",
+    "yargs": "^17.7.2"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "@types/express": "^4.17.21",
+    "@types/cors": "^2.8.17",
+    "@types/yargs": "^17.0.32",
     "ts-node": "^10.9.2",
     "typescript": "^5.4.2"
   }

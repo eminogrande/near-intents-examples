@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Swap EURe ↔ BTC</title>
+  <style>
+    :root { color-scheme: light; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, system-ui, Segoe UI, Roboto, sans-serif;
+      background: #fff;
+      color: #000;
+    }
+    .wrap {
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 16px;
+    }
+    h1 {
+      font-size: 26px;
+      font-weight: 700;
+      margin: 8px 0 4px;
+    }
+    .sub {
+      font-size: 14px;
+      color: #444;
+      margin-bottom: 16px;
+    }
+    .seg {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .seg button {
+      flex: 1;
+      font-size: 16px;
+      padding: 12px;
+      background:#000;
+      color:#fff;
+      border: none;
+      border-radius: 999px;
+    }
+    .seg button[aria-pressed="false"] {
+      background:#eee;
+      color:#000;
+    }
+    label {
+      display:block;
+      font-size: 14px;
+      margin: 10px 0 4px;
+    }
+    input {
+      width: 100%;
+      font-size: 18px;
+      padding: 12px;
+      border:1px solid #000;
+      border-radius: 10px;
+    }
+    .btn-primary {
+      width: 100%;
+      font-size: 18px;
+      padding: 14px;
+      margin-top: 16px;
+      background:#000;
+      color:#fff;
+      border: none;
+      border-radius: 999px;
+    }
+    .btn-primary[disabled] {
+      opacity: 0.6;
+    }
+    .btn-inline {
+      display:inline-block;
+      font-size: 14px;
+      padding: 8px 12px;
+      margin-top: 10px;
+      background:#000;
+      color:#fff;
+      border-radius: 999px;
+      text-decoration: none;
+    }
+    .section {
+      margin-top: 18px;
+      padding-top: 10px;
+      border-top: 1px solid #000;
+    }
+    .out {
+      font-size: 15px;
+    }
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      word-break: break-all;
+    }
+    .note {
+      font-size: 12px;
+      color:#555;
+      margin-top:6px;
+    }
+    .status-pill {
+      display:inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      margin-top:6px;
+    }
+    .status-pending { background:#ffeeba; color:#663c00; }
+    .status-processing { background:#cce5ff; color:#004085; }
+    .status-success { background:#d4edda; color:#155724; }
+    .status-refunded { background:#f8d7da; color:#721c24; }
+    .qr {
+      margin-top: 10px;
+      text-align: center;
+    }
+    .qr img {
+      border:1px solid #000;
+      border-radius: 8px;
+    }
+    a { color:#000; }
+  </style>
+  <script>
+    const UI_VERSION = 'intent-ui v0.5.0';
+    const DEFAULT_EURE_EVM = '0x196C28928b1386D8Dcd32ab223bECcce6f731264';
+    const DEFAULT_BTC_ADDR = '1LBiZCtkByR3BuH7K3RJA15fmri84NW6CT';
+
+    let currentDir = 'btc-to-eure';
+    let statusTimer = null;
+    let lastDepositAddress = '';
+
+    function setDir(val) {
+      currentDir = val;
+      document.getElementById('dir-b2e').setAttribute('aria-pressed', val==='btc-to-eure');
+      document.getElementById('dir-e2b').setAttribute('aria-pressed', val==='eure-to-btc');
+      document.getElementById('amountLabel').textContent =
+        val==='btc-to-eure' ? 'Amount you send (satoshis)' : 'Amount you send (EURe)';
+      document.getElementById('recipientLabel').textContent =
+        val==='btc-to-eure' ? 'EURe receiver (Gnosis EVM)' : 'BTC receiver address';
+      document.getElementById('refundLabel').textContent =
+        val==='btc-to-eure' ? 'BTC refund address' : 'EURe refund (Gnosis EVM)';
+      document.getElementById('amount').placeholder = val==='btc-to-eure' ? 'e.g. 10000' : 'e.g. 10';
+
+      // Keep the default test addresses consistent with direction:
+      // BTC → EURe: send BTC, EURe receiver is DEFAULT_EURE_EVM, BTC refund is DEFAULT_BTC_ADDR
+      // EURe → BTC: send EURe, BTC receiver is DEFAULT_BTC_ADDR, EURe refund is DEFAULT_EURE_EVM
+      const amountEl = document.getElementById('amount');
+      const recipientEl = document.getElementById('recipient');
+      const refundEl = document.getElementById('refund');
+      if (!amountEl || !recipientEl || !refundEl) return;
+      if (val === 'btc-to-eure') {
+        amountEl.value = '10000';
+        recipientEl.value = DEFAULT_EURE_EVM;
+        refundEl.value = DEFAULT_BTC_ADDR;
+      } else {
+        amountEl.value = '10';
+        recipientEl.value = DEFAULT_BTC_ADDR;
+        refundEl.value = DEFAULT_EURE_EVM;
+      }
+    }
+
+    function clearStatus() {
+      const statusEl = document.getElementById('status');
+      statusEl.innerHTML = '';
+      if (statusTimer) {
+        clearInterval(statusTimer);
+        statusTimer = null;
+      }
+      lastDepositAddress = '';
+    }
+
+    function renderStatus(statusObj) {
+      const statusEl = document.getElementById('status');
+      if (!statusObj) {
+        statusEl.innerHTML = '';
+        return;
+      }
+      const status = statusObj.status || statusObj.state || 'UNKNOWN';
+      let cls = 'status-pill ';
+      if (status === 'SUCCESS') cls += 'status-success';
+      else if (status === 'REFUNDED') cls += 'status-refunded';
+      else if (status === 'PROCESSING') cls += 'status-processing';
+      else cls += 'status-pending';
+
+      statusEl.innerHTML = `
+        <div class=\"${cls}\">${status}</div>
+        <div class=\"note\">Polling intent execution status every 5s.</div>
+      `;
+    }
+
+    function startStatusPolling(depositAddress) {
+      const statusEl = document.getElementById('status');
+      lastDepositAddress = depositAddress;
+      if (statusTimer) {
+        clearInterval(statusTimer);
+        statusTimer = null;
+      }
+      statusEl.innerHTML = '<div class=\"note\">Waiting for status...</div>';
+
+      async function tick() {
+        try {
+          const r = await fetch('/api/intend/status/' + encodeURIComponent(depositAddress));
+          const j = await r.json();
+          if (!r.ok) throw new Error(j.error || 'Status failed');
+          renderStatus(j);
+          const status = j.status || j.state;
+          if (status === 'SUCCESS' || status === 'REFUNDED') {
+            clearInterval(statusTimer);
+            statusTimer = null;
+          }
+        } catch (e) {
+          statusEl.innerHTML = '<div class=\"note\">Status error: ' + (e && e.message ? e.message : e) + '</div>';
+        }
+      }
+
+      tick();
+      statusTimer = setInterval(tick, 5000);
+    }
+
+    function renderQuote(dir, q) {
+      const out = document.getElementById('out');
+      if (!q || !q.depositAddress) {
+        out.textContent = 'Quote missing deposit address.';
+        return;
+      }
+      let html = '';
+      if (dir === 'btc-to-eure') {
+        html += `<div><strong>You send</strong> <span class=\"mono\">${q.amountInFormatted || ''} BTC</span>`;
+        if (q.amountIn) html += ` (<span class=\"mono\">${q.amountIn} sats</span>)`;
+        html += `</div>`;
+        html += `<div><strong>You receive (approx)</strong> <span class=\"mono\">${q.amountOutFormatted || ''} EURe</span></div>`;
+      } else {
+        html += `<div><strong>You send</strong> <span class=\"mono\">${q.amountInFormatted || ''} EURe</span>`;
+        if (q.amountIn) html += ` (<span class=\"mono\">${q.amountIn} units</span>)`;
+        html += `</div>`;
+        html += `<div><strong>You receive (approx)</strong> <span class=\"mono\">${q.amountOutFormatted || ''} BTC</span></div>`;
+      }
+      html += `<div style=\"margin-top:10px;\"><strong>Deposit address</strong><div class=\"mono\">${q.depositAddress}</div></div>`;
+
+      const btcUri = `bitcoin:${q.depositAddress}?amount=${encodeURIComponent(q.amountInFormatted || '')}`;
+      const evmUri = `ethereum:${q.depositAddress}`;
+      if (dir === 'btc-to-eure') {
+        html += `<a class=\"btn-inline\" href=\"${btcUri}\">Open in BTC wallet</a>`;
+      } else {
+        html += `<a class=\"btn-inline\" href=\"${evmUri}\">Open in EVM wallet</a>`;
+      }
+
+      html += `<div class=\"qr\"><img alt=\"Deposit QR\" src=\"https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(dir === 'btc-to-eure' ? btcUri : evmUri)}\" /></div>`;
+
+      if (q.deadline) {
+        html += `<div class=\"note\">Deadline: <span class=\"mono\">${q.deadline}</span></div>`;
+      }
+      html += `<div class=\"note\">Pay exactly this amount to the deposit address before the deadline. After paying, keep this page open and watch the status below.</div>`;
+
+      out.innerHTML = html;
+    }
+
+    async function getQuoteAndStart() {
+      const btn = document.getElementById('swapButton');
+      const amount = document.getElementById('amount').value.trim();
+      const recipient = document.getElementById('recipient').value.trim();
+      const refund = document.getElementById('refund').value.trim();
+      const out = document.getElementById('out');
+      if (!amount || !recipient || !refund) {
+        alert('Enter amount, receiver, and refund address');
+        return;
+      }
+      clearStatus();
+      out.textContent = 'Requesting deposit address...';
+      btn.disabled = true;
+      try {
+        const dir = currentDir;
+        const endpoint = dir === 'btc-to-eure' ? '/api/intend/btc-to-eure' : '/api/intend/eure-to-btc';
+        const body = dir === 'btc-to-eure'
+          ? { amountInSats: amount, recipientEvm: recipient, refundBtc: refund }
+          : { amountInEure: amount, recipientBtc: recipient, refundEvm: refund };
+        const r = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || 'Quote failed');
+        renderQuote(j.direction || dir, j);
+        if (j.depositAddress) {
+          startStatusPolling(j.depositAddress);
+        }
+      } catch (e) {
+        out.textContent = 'Quote failed: ' + (e && e.message ? e.message : e);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      console.log(UI_VERSION);
+      setDir('btc-to-eure');
+    });
+  </script>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Swap EURe ↔ BTC</h1>
+    <div class="sub">Mobile-first test page powered by NEAR Intents & 1‑Click. Choose a direction, get a deposit address, pay from your wallet, and watch the status.</div>
+
+    <div class="seg">
+      <button id="dir-b2e" aria-pressed="true" onclick="setDir('btc-to-eure')">BTC → EURe</button>
+      <button id="dir-e2b" aria-pressed="false" onclick="setDir('eure-to-btc')">EURe → BTC</button>
+    </div>
+
+    <label id="amountLabel" for="amount">Amount you send (satoshis)</label>
+    <input id="amount" placeholder="e.g. 10000" inputmode="decimal" autocomplete="off" />
+
+    <label id="recipientLabel" for="recipient">EURe receiver (Gnosis EVM)</label>
+    <input id="recipient" placeholder="0x..." autocomplete="off" />
+
+    <label id="refundLabel" for="refund">BTC refund address</label>
+    <input id="refund" placeholder="bc1..." autocomplete="off" />
+
+    <button id="swapButton" class="btn-primary" onclick="getQuoteAndStart()">Get deposit & start swap</button>
+
+    <div class="section">
+      <div id="out" class="out"></div>
+      <div id="status" class="out" style="margin-top:10px;"></div>
+    </div>
+
+    <div class="note" style="margin-top:14px;">
+      Advanced tester (raw JSON & history): <a href="/intend/">/intend/</a>.
+    </div>
+    <div class="note" style="margin-top:4px;">
+      UI version: <span class="mono">intent-ui v0.5.0</span>
+    </div>
+  </div>
+</body>
+</html>
