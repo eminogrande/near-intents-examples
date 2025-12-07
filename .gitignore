@@ -4,3 +4,6 @@ node_modules
 # Solver and helper env files (keep secrets out of git)
 near-intents-amm-solver/env/.env*
 solver-setup/.env*
+
+# macOS Finder cruft
+.DS_Store

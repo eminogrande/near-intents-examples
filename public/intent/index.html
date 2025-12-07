@@ -120,7 +120,7 @@
     a { color:#000; }
   </style>
   <script>
-    const UI_VERSION = 'intent-ui v0.5.0';
+    const UI_VERSION = 'intent-ui v0.6.0';
     const DEFAULT_EURE_EVM = '0x196C28928b1386D8Dcd32ab223bECcce6f731264';
     const DEFAULT_BTC_ADDR = '1LBiZCtkByR3BuH7K3RJA15fmri84NW6CT';
 
@@ -291,9 +291,36 @@
       }
     }
 
+    async function updatePriceInfo() {
+      const el = document.getElementById('priceInfo');
+      if (!el) return;
+      try {
+        const r = await fetch('/status', { cache: 'no-store' });
+        const j = await r.json();
+        const oracle = j && j.price_info && typeof j.price_info.price === 'number' ? j.price_info.price : null;
+        const amm = typeof j.amm_price_eure_per_btc === 'number' ? j.amm_price_eure_per_btc : null;
+        const margin = typeof j.margin_percent === 'number' ? j.margin_percent : null;
+        const guard = j && j.price_guard && j.price_guard.guard ? j.price_guard.guard : null;
+        const guardOn = !!(guard && guard.enabled);
+        const parts = [];
+        if (oracle !== null) parts.push(`oracle BTC/EURe ≈ ${oracle.toFixed(2)}`);
+        if (margin !== null) parts.push(`margin ${margin}%`);
+        if (amm !== null) parts.push(`pool price (info) ≈ ${amm.toFixed(2)}`);
+        const mode = guardOn ? 'oracle guard ON' : 'oracle guard OFF';
+        if (parts.length) {
+          el.textContent = `Pricing (our solver): ${parts.join(', ')} – ${mode}. Quotes use oracle price; reserves only cap max size.`;
+        } else {
+          el.textContent = 'Pricing (our solver): oracle price unavailable right now.';
+        }
+      } catch (e) {
+        el.textContent = 'Pricing (our solver): failed to fetch status.';
+      }
+    }
+
     window.addEventListener('DOMContentLoaded', () => {
       console.log(UI_VERSION);
       setDir('btc-to-eure');
+      updatePriceInfo();
     });
   </script>
 </head>
@@ -323,11 +350,13 @@
       <div id="status" class="out" style="margin-top:10px;"></div>
     </div>
 
-    <div class="note" style="margin-top:14px;">
+    <div id="priceInfo" class="note" style="margin-top:14px;"></div>
+
+    <div class="note" style="margin-top:8px;">
       Advanced tester (raw JSON & history): <a href="/intend/">/intend/</a>.
     </div>
     <div class="note" style="margin-top:4px;">
-      UI version: <span class="mono">intent-ui v0.5.0</span>
+      UI version: <span class="mono">intent-ui v0.6.0</span>
     </div>
   </div>
 </body>
